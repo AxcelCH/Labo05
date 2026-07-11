@@ -14,20 +14,73 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.jach.labo05.data.remote.NetworkConstants
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
     onSubmit: (username: String, password: String, onResult: (Boolean) -> Unit) -> Unit,
+    onGoogleLogin: (token: String, onResult: (Boolean) -> Unit) -> Unit,
     onRegisterNavigate: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = CredentialManager.create(context)
+
     var usuario by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var verificando by remember { mutableStateOf(false) }
+
+    // ── Flujo completo de Google Sign-In (Lab 8) ──
+    suspend fun processCredentialResult(result: androidx.credentials.GetCredentialResponse) {
+        val credential = result.credential
+        if (credential is CustomCredential &&
+            credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+            val idToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
+            verificando = true
+            onGoogleLogin(idToken) { success ->
+                verificando = false
+                if (!success) error = "El servidor no reconoció la cuenta de Google"
+            }
+        }
+    }
+
+    fun handleGoogleLogin() {
+        scope.launch {
+            try {
+                val signInOption = GetSignInWithGoogleOption
+                    .Builder(NetworkConstants.GOOGLE_WEB_CLIENT_ID)
+                    .build()
+
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(signInOption)
+                    .build()
+
+                val result = credentialManager.getCredential(context = context, request = request)
+                processCredentialResult(result)
+
+            } catch (e: GetCredentialCancellationException) {
+                error = ""
+            } catch (e: NoCredentialException) {
+                error = "No se pudo abrir el selector. Asegúrate de tener conexión y Google Play Services al día."
+            } catch (e: Exception) {
+                error = "Error al conectar con Google: ${e.localizedMessage}"
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -105,6 +158,19 @@ fun LoginScreen(
             } else {
                 Text("Ingresar")
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ── Botón de Google Sign-In (Lab 8) ──
+        OutlinedButton(
+            onClick = { handleGoogleLogin() },
+            enabled = !verificando,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+        ) {
+            Text("Continuar con Google")
         }
 
         Spacer(modifier = Modifier.height(12.dp))

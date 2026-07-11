@@ -4,25 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.jach.labo05.data.session.SessionManager
-import com.jach.labo05.security.PasswordHasher
-import kotlinx.coroutines.Dispatchers
+import com.jach.labo05.data.remote.NetworkConstants
+import com.jach.labo05.data.remote.RetrofitClient
+import com.jach.labo05.data.remote.model.*
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class SessionViewModel(
     private val sessionManager: SessionManager
 ) : ViewModel() {
-
-    companion object {
-        // Ejercicio 5: validación con PBKDF2 en lugar de comparación directa de strings.
-        // Salt fijo para el laboratorio (en producción: salt aleatorio por usuario, guardado en BD)
-        private val SALT = "demodata-lab5-salt".toByteArray()
-        private const val USUARIO_VALIDO = "jkn"
-        // Hash PBKDF2 de la contraseña esperada ("jkn"), calculado una sola vez
-        private val HASH_ESPERADO by lazy { PasswordHasher.hash("jkn", SALT) }
-    }
 
     val isLoggedIn = sessionManager.isLoggedIn.stateIn(
         scope        = viewModelScope,
@@ -42,28 +34,88 @@ class SessionViewModel(
         initialValue = null
     )
 
-    fun login(username: String, password: String, onResult: (Boolean) -> Unit) {
+    fun login(email: String, password: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            // Normalizamos: sin espacios accidentales ni mayúsculas del autocorrector
-            val user = username.trim().lowercase()
-            val pass = password.trim()
-
-            // PBKDF2 con 120 000 iteraciones es costoso: se ejecuta fuera del Main Thread
-            val esValido = withContext(Dispatchers.Default) {
-                try {
-                    val hashIngresado = PasswordHasher.hash(pass, SALT)
-                    user == USUARIO_VALIDO &&
-                            PasswordHasher.constantTimeEquals(hashIngresado, HASH_ESPERADO)
-                } catch (e: Exception) {
-                    // PBKDF2WithHmacSHA256 requiere API 26+; en dispositivos
-                    // antiguos caemos a la comparación directa del lab base
-                    user == USUARIO_VALIDO && pass == USUARIO_VALIDO
+            try {
+                val response = RetrofitClient.apiService.login(
+                    projectSlug = NetworkConstants.PROJECT_SLUG,
+                    request     = LoginRequest(
+                        email    = email,
+                        password = password,
+                        deviceId = sessionManager.getDeviceId()
+                    )
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    sessionManager.login(email, body.accessToken, body.refreshToken)
+                    onResult(true)
+                } else {
+                    onResult(false)
                 }
+            } catch (e: Exception) {
+                onResult(false)
             }
-            if (esValido) {
-                sessionManager.login(user)
-                onResult(true)
-            } else {
+        }
+    }
+
+    fun register(email: String, password: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.apiService.register(
+                    projectSlug = NetworkConstants.PROJECT_SLUG,
+                    request     = RegisterRequest(email, password)
+                )
+                onResult(response.isSuccessful)
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
+    }
+
+    fun loginWithGoogle(googleToken: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.apiService.loginWithGoogle(
+                    projectSlug = NetworkConstants.PROJECT_SLUG,
+                    request     = GoogleLoginRequest(
+                        token    = googleToken,
+                        deviceId = sessionManager.getDeviceId()
+                    )
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    sessionManager.login("Google User", body.accessToken, body.refreshToken)
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
+    }
+
+    fun refreshSession(onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val currentRefresh = sessionManager.refreshToken.firstOrNull()
+                if (currentRefresh != null) {
+                    val response = RetrofitClient.apiService.refreshToken(
+                        projectSlug = NetworkConstants.PROJECT_SLUG,
+                        request     = RefreshTokenRequest(
+                            refreshToken = currentRefresh,
+                            deviceId     = sessionManager.getDeviceId()
+                        )
+                    )
+                    if (response.isSuccessful && response.body() != null) {
+                        val body = response.body()!!
+                        sessionManager.updateTokens(body.accessToken, body.refreshToken)
+                        onResult(true)
+                        return@launch
+                    }
+                }
+                onResult(false)
+            } catch (e: Exception) {
                 onResult(false)
             }
         }

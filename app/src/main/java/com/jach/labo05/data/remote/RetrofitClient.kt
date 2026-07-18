@@ -11,6 +11,7 @@ object RetrofitClient {
     private val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues  = true
+        encodeDefaults     = true   // ← Lab 9: envía platform="android" en el POST
     }
 
     private val logging = HttpLoggingInterceptor().apply {

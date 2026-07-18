@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
     kotlin("plugin.serialization") version "2.2.10"
 }
 
@@ -103,4 +104,9 @@ dependencies {
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
+
+    // ── Firebase Cloud Messaging ──  ← NUEVO Lab 11 (notificaciones push)
+    implementation(platform(libs.firebase.bom))    // BoM gestiona versiones consistentes
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.messaging)
 }

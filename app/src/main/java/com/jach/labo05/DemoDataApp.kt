@@ -9,7 +9,6 @@ import com.jach.labo05.data.repository.MediaRepository
 import com.jach.labo05.data.session.SessionManager
 
 class DemoDataApp : Application() {
-
     val database     by lazy { DemoDataDatabase.getInstance(this) }
     val fileStorage  by lazy { FileStorageManager(this) }
     val sessionManager by lazy { SessionManager(this) }

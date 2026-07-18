@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jach.labo05.DemoDataApp
+import com.jach.labo05.data.remote.model.GeoEventResponse
 import com.jach.labo05.ui.viewmodel.SyncViewModel
 
 @Composable
@@ -23,10 +24,24 @@ fun SyncScreen() {
     val context = LocalContext.current
     val app     = context.applicationContext as DemoDataApp
     val vm: SyncViewModel = viewModel(
-        factory = SyncViewModel.Factory(app.gpsRepository, app.mediaRepository, app.audioRepository)
+        factory = SyncViewModel.Factory(
+            app.gpsRepository,
+            app.mediaRepository,
+            app.audioRepository,
+            app.sessionManager
+        )
     )
 
-    val counts by vm.counts.collectAsStateWithLifecycle()
+    val counts        by vm.counts.collectAsStateWithLifecycle()
+    val isSyncing     by vm.isSyncing.collectAsStateWithLifecycle()
+    val syncMessage   by vm.syncMessage.collectAsStateWithLifecycle()
+    val syncProgress  by vm.syncProgress.collectAsStateWithLifecycle()
+    val cloudRecords  by vm.cloudRecords.collectAsStateWithLifecycle()
+    val isLoadingCloud by vm.isLoadingCloud.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        vm.refreshCloudData()
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
@@ -39,21 +54,40 @@ fun SyncScreen() {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
+        // ── Botón Sync ──
         Button(
-            onClick  = { Toast.makeText(context, "Por implementar", Toast.LENGTH_SHORT).show() },
+            onClick  = {
+                vm.sync { success ->
+                    if (success) {
+                        Toast.makeText(context, "Sincronización finalizada", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            enabled  = !isSyncing,
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
             Icon(Icons.Default.CloudUpload, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Sincronizar ahora")
+            Text(if (isSyncing) "Sincronizando..." else "Sincronizar ahora")
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "El servidor se integrará en una fase posterior.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline
-        )
+        if (isSyncing) {
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { syncProgress },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        if (syncMessage != null) {
+            Text(
+                text     = syncMessage!!,
+                style    = MaterialTheme.typography.bodySmall,
+                color    = if (syncMessage!!.contains("Error")) MaterialTheme.colorScheme.error
+                           else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -87,6 +121,53 @@ fun SyncScreen() {
         CategoryRow(Icons.Default.Videocam,   "Videos",           counts.videos)
         Spacer(modifier = Modifier.height(8.dp))
         CategoryRow(Icons.Default.AudioFile,  "Audios",           counts.audios)
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // ── Sección de Datos en la Nube (Lab 9 · Parte 3) ──
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically
+        ) {
+            Text("Datos en la nube (Servidor)", style = MaterialTheme.typography.titleSmall)
+            TextButton(onClick = { vm.refreshCloudData() }) { Text("Actualizar") }
+        }
+
+        if (isLoadingCloud) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        if (cloudRecords.isEmpty() && !isLoadingCloud) {
+            Text(
+                "No hay datos registrados en el servidor para este usuario.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        } else {
+            cloudRecords.forEach { record ->
+                CloudRecordCard(record)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudRecordCard(record: GeoEventResponse) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+        )
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("ID: ${record.id} • ${record.eventType ?: "GPS"}", style = MaterialTheme.typography.titleSmall)
+                Text("${record.latitude}, ${record.longitude}", style = MaterialTheme.typography.bodySmall)
+                Text("Registrado: ${record.recordedAt}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+        }
     }
 }
 

@@ -54,4 +54,12 @@ interface ApiService {
         @Query("limit") limit: Int = 50,
         @Query("offset") offset: Int = 0
     ): Response<List<GeoEventResponse>>
+
+    // ── Lab 11: registrar/actualizar el token FCM del dispositivo en el backend ──
+    @POST("{projectSlug}/device-tokens/")
+    suspend fun updateFcmToken(
+        @Path("projectSlug") projectSlug: String,
+        @Header("Authorization") token: String?,
+        @Body request: DeviceTokenRequest
+    ): Response<Unit>
 }
